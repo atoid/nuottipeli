@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html>
+
+<!-- Nuottipeli (c) 2018 Matti Kantola apophis@kajaani.net -->
+
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="iso-8859-1">
+
+<style>
+body {
+    background-color: #ffffff;
+}
+
+canvas {
+    background-color: #ffffff;
+}
+
+.ui-space {
+    width: 40px;
+    height: 50px;
+    line-height: 50px;
+    border: 2px solid white;
+    display: inline-block;
+}
+
+.ui-button {
+    width: 55px;
+    height: 50px;
+    line-height: 50px;
+    background-color: #ffffff;
+    color: #000000;
+    border: 2px solid black;
+    border-radius: 4px;
+    text-align: center;
+    display: inline-block;
+    margin-right: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ui-button-wide {
+    width: 100px;
+}
+
+.ui-button-green {
+    background-color: #00aa00;
+}
+
+.ui-button-red {
+    background-color: #ff0000;
+}
+
+</style>
+
+<title>Nuottipeli</title>
+</head>
+
+<body>
+
+<script src="jquery-1.12.4.min.js"></script>
+
+<script>
+
+"use strict";
+
+const G_CLEF_YPOS = 55;
+const F_CLEF_YPOS = 191;
+const NOTE_SCALE = 0.5;
+const NOTE_X_OFFSET = -18;
+const NOTE_Y_OFFSET = -43;
+const NOTE_X_START = 120;
+const NOTE_X_SPACING = 40;
+const DEFAULT_LEVEL = 4;
+const DEFAULT_MAX_LEVEL = 7;
+const MAX_MAX_LEVEL = 15;
+const NOTES_ADVANCE_LEVEL = 20;
+const MAX_NOTES = 10;
+const INITIAL_TIMEOUT = 2000;
+
+//                           0      1     2     3     4     5     6     7     8     9    10    11   12   13   14   15
+const LEVEL_INTERVALS = [10000, 10000, 8000, 6000, 5000, 4000, 3000, 2500, 2000, 1400, 1200, 1000, 800, 600, 400, 300 ];
+
+var width = 571;
+var height = 320;
+var test = 0;
+var maxLevel;
+
+var noteIndex = 0;
+var noteClicked;
+var noteCorrect = 0;
+var noteIncorrect = 0;
+var noteEmpty = 0;
+
+var currNote = -1;
+var currPitch = 0;
+var currClef = 0;
+var currNumNotes = 0;
+var currLevel = 0;
+var currTimeout = 0;
+
+var main_tmr;
+var sub_tmr;
+
+var ctx;
+
+function init()
+{
+    maxLevel = localStorage.getItem("maxLevel");
+    if (!maxLevel)
+    {
+        maxLevel = DEFAULT_MAX_LEVEL;
+        localStorage.setItem("maxLevel", maxLevel);
+    }
+
+    console.log("Params: " + document.location.hash);
+    var params = decodeURIComponent(document.location.hash).substr(1).split(":");
+    for (var i in params)
+    {
+        eval(params[i]);
+    }
+    
+    fillLevels(true);
+    
+    var elem = document.getElementById("myCanvas");
+    elem.width = width;
+    elem.height = height;
+    ctx = elem.getContext("2d");
+	
+    refreshStaff();
+    if (test)
+    {
+        doTest();
+    }
+    else
+    {
+        addNote();
+        addNote();
+    }
+
+    console.log("Init complete");
+}
+
+function doTest()
+{
+    var s = NOTE_X_SPACING;
+
+    if (test == 1)
+    {
+        drawNote( -3, NOTE_X_START + s*0, G_CLEF_YPOS);
+        drawNote( -2, NOTE_X_START + s*1, G_CLEF_YPOS);
+        drawNote( -1, NOTE_X_START + s*2, G_CLEF_YPOS);
+        drawNote(  0, NOTE_X_START + s*3, G_CLEF_YPOS);
+        drawNote( 10, NOTE_X_START + s*4, G_CLEF_YPOS);
+        drawNote( 11, NOTE_X_START + s*5, G_CLEF_YPOS);
+        drawNote( 12, NOTE_X_START + s*6, G_CLEF_YPOS);
+        drawNote( 13, NOTE_X_START + s*7, G_CLEF_YPOS);
+
+        drawNote( -3, NOTE_X_START + s*0, F_CLEF_YPOS);
+        drawNote( -2, NOTE_X_START + s*1, F_CLEF_YPOS);
+        drawNote( -1, NOTE_X_START + s*2, F_CLEF_YPOS);
+        drawNote(  0, NOTE_X_START + s*3, F_CLEF_YPOS);
+        drawNote( 10, NOTE_X_START + s*4, F_CLEF_YPOS);
+        drawNote( 11, NOTE_X_START + s*5, F_CLEF_YPOS);
+        drawNote( 12, NOTE_X_START + s*6, F_CLEF_YPOS);
+        drawNote( 13, NOTE_X_START + s*7, F_CLEF_YPOS);
+    }
+    else
+    {
+        const names = " CDEFGAH";
+        var notes = test.split(",");
+        var clef = notes[0];
+        for (var n = 1; n < notes.length; n++)
+        {
+            var note = notes[n];
+            var pitch = noteToPitch(clef, note);
+            drawNote(pitch, NOTE_X_START + s*n, clef == "G" ? G_CLEF_YPOS : F_CLEF_YPOS);
+            var check = names.substr(pitchToNote(clef, pitch), 1);
+            if (check != note)
+            {
+                console.log("FATAL!!");
+            }
+        }
+    }
+}
+
+function fillLevels(select)
+{
+    $("#ui_level").empty();
+    
+    for (var i = 1; i <= maxLevel; i++)
+    {
+        $("#ui_level").append("<option>"+i+"</option>");
+    }
+    
+    $('#ui_level option').eq(select ? DEFAULT_LEVEL : maxLevel-1).prop('selected', true);
+}
+
+function advanceLevel()
+{
+    if (parseInt($("#ui_correct").text()) >= currNumNotes && maxLevel < MAX_MAX_LEVEL && currLevel >= maxLevel && currNumNotes >= NOTES_ADVANCE_LEVEL)
+    {
+        maxLevel++;
+        localStorage.setItem("maxLevel", maxLevel);
+        fillLevels();
+        alert("Uusi taso " + maxLevel + " avattu!");
+    }
+}
+
+function drawStaff()
+{
+    var img = document.getElementById('viivasto');
+    ctx.drawImage(img, 0, 20);
+}
+
+function drawNote(pitch, x, y)
+{
+    const numLines = [0, 1, 1, 2, 2, 3, 3];
+
+    var szy = 14.2;
+    var img = document.getElementById('nuotti');
+    ctx.drawImage(img, x + NOTE_X_OFFSET, y + pitch/2 * szy + NOTE_Y_OFFSET, 69*NOTE_SCALE, 105*NOTE_SCALE);
+    
+    if (pitch < 0)
+    {
+        var lines = numLines[-pitch];
+        var ty = y - szy/2;
+        
+        ctx.beginPath();
+        for (var i = 0; i < lines; i++)
+        {
+            ctx.moveTo(x-14, ty);
+            ctx.lineTo(x+14, ty);
+            ty -= szy;
+        }
+        ctx.stroke();
+    }
+
+    if (pitch > 10)
+    {
+        var lines = numLines[pitch-10];
+        var ty = y + 5.5 * szy;
+        
+        ctx.beginPath();
+        for (var i = 0; i < lines; i++)
+        {
+            ctx.moveTo(x-14, ty);
+            ctx.lineTo(x+14, ty);
+            ty += szy;
+        }
+        ctx.stroke();
+    }
+}
+
+function refreshStaff()
+{
+    currNote = 0;
+    ctx.clearRect(0, 0, width, height);
+    drawStaff();
+}
+
+function addNote()
+{
+    if (currNote >= MAX_NOTES || currNote == -1)
+    {
+        refreshStaff();
+        currNote = 0;
+    }
+
+    currClef = $("#ui_clef").val();
+    
+    if (currClef == "G ja F")
+    {
+        currClef = Math.random() > 0.5 ? "G" : "F";
+    }
+    
+    if ($("#ui_lines").val() == "1")
+    {
+        currPitch = -1 + Math.floor(Math.random()*13);
+    }
+    else
+    {
+        currPitch = -3 + Math.floor(Math.random()*17);
+    }
+    
+    if (currClef == "G")
+    {
+        drawNote(currPitch, NOTE_X_START + currNote * NOTE_X_SPACING, G_CLEF_YPOS);
+    }
+    else
+    {
+        drawNote(currPitch, NOTE_X_START + currNote * NOTE_X_SPACING, F_CLEF_YPOS);
+    }
+    
+    currNote++;
+}
+
+function reset()
+{
+    noteIndex = 0;
+    noteClicked = undefined;
+    noteCorrect = 0;
+    noteIncorrect = 0;
+    noteEmpty = 0;
+    
+    currNumNotes = $("#ui_num_notes").val();
+    currLevel = $("#ui_level").val();
+
+    $("#ui_note").html("-");
+    $("#ui_correct").html("-");
+    $("#ui_incorrect").html("-");
+    $("#ui_emtpty").html("-");
+
+    clearTimeout(main_tmr);
+    clearTimeout(sub_tmr);
+    main_tmr = undefined;
+    sub_tmr = undefined;
+}
+
+function doTimeout()
+{
+    noteIndex++;
+    
+    if (noteIndex > $("#ui_num_notes").val())
+    {
+        advanceLevel();
+    }
+    else
+    {
+        main_tmr = setTimeout(doTimeout, currTimeout);
+    }
+
+    if (noteIndex > 1 && noteClicked === undefined)
+    {
+        noteEmpty++;
+        $("#ui_emtpty").html(noteEmpty);
+    }
+    
+    if (noteIndex <= $("#ui_num_notes").val())
+    {
+        $("#ui_note").html(noteIndex);
+
+        $(".ui-button").removeClass('ui-button-green ui-button-red');
+        addNote();
+
+        noteClicked = undefined;
+        
+        var thisClef = currClef;
+        var thisPitch = currPitch;
+
+        if (currTimeout >= 1000)
+        {
+            sub_tmr = setTimeout(function() {
+                if (!noteClicked)
+                {
+                    var id = "#n" + pitchToNote(thisClef, thisPitch);
+                    $(id).addClass('ui-button-green');
+                    sub_tmr = setTimeout(function() {
+                        $(id).removeClass('ui-button-green');
+                    }, 90);
+                }
+            }, currTimeout-100);
+        }
+    }
+}
+
+function onStart()
+{
+    reset();
+    refreshStaff();
+    
+    currTimeout = LEVEL_INTERVALS[$("#ui_level").val()];
+    console.log("Interval: " + currTimeout);
+    
+    main_tmr = setTimeout(doTimeout, INITIAL_TIMEOUT);
+}
+
+function onNoteClick(elem)
+{
+    if (noteClicked === undefined)
+    {        
+        var id = "n" + pitchToNote(currClef, currPitch);
+        
+        if ($(elem).prop('id') == id)
+        {
+            noteClicked = true;
+            noteCorrect++;
+            $(elem).addClass('ui-button-green');
+        }
+        else
+        {
+            noteClicked = false;
+            noteIncorrect++;
+            $(elem).addClass('ui-button-red');
+        }
+
+        $("#ui_correct").html(noteCorrect);
+        $("#ui_incorrect").html(noteIncorrect);
+    }
+}
+
+function pitchToNote(clef, pitch)
+{
+    var g_notes = [1, 7, 6, 5, 4, 3, 2];
+    var f_notes = [3, 2, 1, 7, 6, 5, 4];
+
+    pitch = (pitch + 3) % 7;
+    return clef == "G" ? g_notes[pitch] : f_notes[pitch];
+}
+
+function noteToPitch(clef, note)
+{
+    var g_notes = {
+        "C": 11,
+        "D": 10,
+        "E":  9,
+        "F":  8,
+        "G":  7,
+        "A":  6,
+        "H":  5
+    };
+
+    var f_notes = {
+        "C":  6,
+        "D":  5,
+        "E":  4,
+        "F":  3,
+        "G":  2,
+        "A":  1,
+        "H":  0
+    };
+
+    return clef == "G" ? g_notes[note] : f_notes[note];
+}
+
+var loadMask = 0;
+
+function onLoad(mask)
+{
+    loadMask |= mask;
+    if (loadMask == 7)
+    {
+        init();
+    }
+}
+
+$( document ).ready(function() {
+    onLoad(4);
+});
+
+</script>
+
+<table>
+<tr>
+<td>
+    <canvas id="myCanvas"></canvas>
+    <br>
+    <div class='ui-space'>&nbsp;</div>
+    <div class='ui-button' onclick="onNoteClick(this)" id="n1">C</div>
+    <div class='ui-button' onclick="onNoteClick(this)" id="n2">D</div>
+    <div class='ui-button' onclick="onNoteClick(this)" id="n3">E</div>
+    <div class='ui-button' onclick="onNoteClick(this)" id="n4">F</div>
+    <div class='ui-button' onclick="onNoteClick(this)" id="n5">G</div>
+    <div class='ui-button' onclick="onNoteClick(this)" id="n6">A</div>
+    <div class='ui-button' onclick="onNoteClick(this)" id="n7">H</div>
+</td>
+<td>
+    <table>
+    <tr>
+    <td>
+        Taso:
+    </td>
+    <td>
+        <select id="ui_level">
+        </select>
+    </td>
+    </tr>
+
+    <tr>
+    <td>
+        Määrä:
+    </td>
+    <td>
+        <select id="ui_num_notes">
+          <option selected>10</option>
+          <option>20</option>
+          <option>30</option>
+          <option>50</option>
+          <option>70</option>
+          <option>100</option>
+        </select>
+    </td>
+    </tr>
+
+    <tr>
+    <td>
+        Avain:
+    </td>
+    <td>
+        <select id="ui_clef">
+          <option selected>G</option>
+          <option>F</option>
+          <option>G ja F</option>
+        </select>
+    </td>
+    </tr>
+
+    <tr>
+    <td>
+        Apuviivat:
+    </td>
+    <td>
+        <select id="ui_lines">
+          <option selected>1</option>
+          <option>2</option>
+        </select>
+    </td>
+    </tr>
+
+    <tr>
+    <td>&nbsp;</td>
+    </tr>
+    
+    <tr>
+    <td colspan="2">
+        <div class='ui-button ui-button-wide' onclick="onStart()">Aloita</div>
+    </td>
+    </tr>
+
+    <tr>
+    <td>&nbsp;</td>
+    </tr>
+
+    <tr>
+    <td>
+        Nuotti:
+    </td>
+    <td id="ui_note"></td>
+    </tr>
+
+    <tr>
+    <td>
+        Oikein:
+    </td>
+    <td id="ui_correct"></td>
+    </tr>
+    
+    <tr>
+    <td>
+        Väärin:
+    </td>
+    <td id="ui_incorrect"></td>
+    </tr>
+
+    <tr>
+    <td>
+        Tyhjä:
+    </td>
+    <td id="ui_emtpty"></td>
+    </tr>
+
+    </table>
+</td>
+</tr>
+</table>
+
+<div style="display:none">
+<img id='viivasto' src="viivasto.png" onload="onLoad(1)">
+<img id='nuotti' src="nuotti.png" onload="onLoad(2)">
+</div>
+
+</body>
+</html>
+
