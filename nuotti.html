@@ -314,7 +314,7 @@ function reset()
     $("#ui_note").html("-");
     $("#ui_correct").html("-");
     $("#ui_incorrect").html("-");
-    $("#ui_emtpty").html("-");
+    $("#ui_empty").html("-");
 
     clearTimeout(main_tmr);
     clearTimeout(sub_tmr);
@@ -338,7 +338,7 @@ function doTimeout()
     if (noteIndex > 1 && noteClicked === undefined)
     {
         noteEmpty++;
-        $("#ui_emtpty").html(noteEmpty);
+        $("#ui_empty").html(noteEmpty);
     }
     
     if (noteIndex <= $("#ui_num_notes").val())
@@ -483,7 +483,7 @@ $( document ).ready(function() {
 
     <tr>
     <td>
-        M‰‰r‰:
+        M&auml;&auml;r&auml;:
     </td>
     <td>
         <select id="ui_num_notes">
@@ -552,16 +552,16 @@ $( document ).ready(function() {
     
     <tr>
     <td>
-        V‰‰rin:
+        V&auml;&auml;rin:
     </td>
     <td id="ui_incorrect"></td>
     </tr>
 
     <tr>
     <td>
-        Tyhj‰:
+        Tyhj&auml;:
     </td>
-    <td id="ui_emtpty"></td>
+    <td id="ui_empty"></td>
     </tr>
 
     </table>
